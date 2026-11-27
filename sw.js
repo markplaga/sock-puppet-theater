@@ -22,8 +22,8 @@
 //   or IndexedDB use — snapshots and 10-second clips are downloads),
 //   so there is nothing to preserve across an update; the page
 //   reports no unsaved work to other tabs.
-const RELEASE = '1.0.0-20261127-1';
-const DISPLAY_VERSION = '1.0.0';
+const RELEASE = '1.0.1-20261127-1';
+const DISPLAY_VERSION = '1.0.1';
 const NAMESPACE = 'pwa::markplaga/sock-puppet-theater::';
 const CACHE = NAMESPACE + RELEASE;
 const SHELL = [
