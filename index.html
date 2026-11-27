@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Sock Puppet Theater</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #09090b;
+      color: #f4f4f5;
+      overflow-x: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+  <!-- Top Header -->
+  <header class="w-full border-b border-zinc-800 bg-zinc-900/90 backdrop-blur px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl" aria-hidden="true">🐵</span>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-white">3D Sock Puppet Theater</h1>
+        <p id="statusLabel" class="text-xs text-emerald-400">Ready — Demo Mode Active (Both Hands & Wrist Rotation)</p>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button id="cameraBtn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer">
+        Start Camera
+      </button>
+      <button id="demoBtn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 transition cursor-pointer">
+        Demo Mode: On
+      </button>
+      <button id="soundBtn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 transition cursor-pointer">
+        Jungle Audio: Off
+      </button>
+      <button id="snapshotBtn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 transition cursor-pointer">
+        Snapshot
+      </button>
+      <button id="record10Btn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer">
+        Record 10s
+      </button>
+      <button id="fullscreenBtn" type="button" class="px-3.5 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer">
+        Fullscreen
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main id="stageShell" class="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+    <!-- Stage Canvas Container -->
+    <section class="lg:col-span-8 flex flex-col gap-3">
+      <div id="stageFrame" class="relative w-full aspect-video min-h-[320px] rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl">
+        <video id="videoInput" class="hidden" playsinline muted></video>
+        <canvas id="stageCanvas"></canvas>
+
+        <!-- Toast Banner -->
+        <div id="toastBanner" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full bg-zinc-950/90 border border-zinc-700 text-xs sm:text-sm text-zinc-100 shadow-lg"></div>
+
+        <!-- 10-Second Hand-to-Puppet Recording Dialogue Box -->
+        <div id="recordDialogue" role="dialog" aria-modal="false" aria-labelledby="recordDialogueTitle" class="hidden absolute inset-0 z-30 flex items-center justify-center bg-zinc-950/65 p-4">
+          <div class="w-full max-w-md rounded-2xl bg-zinc-900/95 border border-amber-500/50 p-5 shadow-2xl space-y-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p id="recordDialogueTitle" class="text-xs font-semibold uppercase tracking-wider text-amber-400">10-Second Recording</p>
+                <p id="recordDialogueMessage" class="mt-1.5 text-sm sm:text-base font-medium text-white leading-relaxed">
+                  I’m gonna record you for the next 10 seconds — I’d like you to look to see what the puppet is doing in relation to my hand movements.
+                </p>
+              </div>
+              <span id="recordCountdownBadge" class="shrink-0 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                10s
+              </span>
+            </div>
+
+            <div class="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
+              <div id="recordProgressBar" class="h-full w-full bg-amber-400 transition-all duration-150"></div>
+            </div>
+
+            <div id="recordReviewArea" class="hidden space-y-2">
+              <p class="text-xs text-emerald-300 font-medium">Recording complete — review how the puppet moved with your hands:</p>
+              <video id="recordedClipPreview" controls playsinline class="w-full max-h-48 rounded-xl bg-black border border-zinc-700"></video>
+              <textarea id="motionLogOutput" readonly rows="4" class="w-full rounded-xl bg-zinc-950 border border-zinc-700 p-2 text-[11px] font-mono text-zinc-300 focus:outline-none"></textarea>
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div class="flex items-center gap-3">
+                  <a id="downloadClipLink" download="puppet-hand-study-10s.webm" class="text-xs text-indigo-300 hover:text-indigo-200 underline">
+                    Download Clip
+                  </a>
+                  <button id="copyMotionLogBtn" type="button" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-600/80 hover:bg-indigo-500 text-white cursor-pointer">
+                    Copy Motion Log
+                  </button>
+                </div>
+                <button id="closeRecordDialogueBtn" type="button" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 cursor-pointer">
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div id="recordActiveActions" class="flex items-center justify-end gap-2">
+              <button id="cancelRecordBtn" type="button" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 cursor-pointer">
+                Stop Early
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Fullscreen Bar -->
+        <div id="fullscreenBar" class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 rounded-2xl bg-zinc-950/85 backdrop-blur border border-zinc-700/80 shadow-xl">
+          <button id="fsToggleDemo" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer">
+            Demo
+          </button>
+          <button id="fsToggleSound" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer">
+            Audio
+          </button>
+          <button id="fsResetCam" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer">
+            Reset 3D View
+          </button>
+          <button id="fsExitBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white cursor-pointer">
+            Exit Fullscreen
+          </button>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400 px-1">
+        <span>Hold both hands in front of your camera and rotate your wrists to turn the 3D puppets. Right-drag or Alt+drag to orbit the 3D camera.</span>
+        <button id="resetCameraBtn" type="button" class="text-indigo-400 hover:text-indigo-300 underline cursor-pointer">
+          Reset 3D Camera
+        </button>
+      </div>
+    </section>
+
+    <!-- Controls Sidebar -->
+    <aside class="lg:col-span-4 flex flex-col gap-4 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4">
+      <!-- Backdrop & Audio -->
+      <div class="space-y-3">
+        <h2 class="text-sm font-semibold text-white uppercase tracking-wider">Stage & Ambience</h2>
+        <div>
+          <label for="backdropSelect" class="block text-xs text-zinc-400 mb-1">Stage Backdrop</label>
+          <select id="backdropSelect" class="w-full rounded-xl bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="jungle" selected>Lush Jungle (Default)</option>
+            <option value="sunset">Golden Savanna Sunset</option>
+            <option value="spotlight">Velvet Theater Curtain</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs text-zinc-400 mb-1">
+            <label for="volumeSlider">Jungle Soundscape Volume</label>
+            <span id="volumeValue">35%</span>
+          </div>
+          <input id="volumeSlider" type="range" min="0" max="100" value="35" class="w-full accent-emerald-500 cursor-pointer" />
+        </div>
+      </div>
+
+      <!-- Wrist Rotation & Hand Tracking Controls -->
+      <div class="space-y-3 pt-3 border-t border-zinc-800">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-white uppercase tracking-wider">Wrist & 3D Motion</h2>
+          <label class="inline-flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+            <input id="wristToggle" type="checkbox" checked class="rounded accent-indigo-500" />
+            Wrist Rotation
+          </label>
+        </div>
+
+        <label class="inline-flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+          <input id="fingerOverlayToggle" type="checkbox" checked class="rounded accent-emerald-500" />
+          Show Finger Landmarks & Labels
+        </label>
+
+        <label class="inline-flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+          <input id="mirrorMotionToggle" type="checkbox" checked class="rounded accent-amber-500" />
+          Mirror Left / Right Motion (Front Camera)
+        </label>
+
+        <div>
+          <div class="flex justify-between text-xs text-zinc-400 mb-1">
+            <label for="sensitivitySlider">Rotation Sensitivity</label>
+            <span id="sensitivityValue">1.3x</span>
+          </div>
+          <input id="sensitivitySlider" type="range" min="0.4" max="2.5" step="0.1" value="1.3" class="w-full accent-indigo-500 cursor-pointer" />
+        </div>
+      </div>
+
+      <!-- Left & Right Puppet Styles -->
+      <div class="space-y-3 pt-3 border-t border-zinc-800">
+        <h2 class="text-sm font-semibold text-white uppercase tracking-wider">3D Puppet Cast</h2>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+          <div class="p-3 rounded-xl bg-zinc-800/70 border border-zinc-700/70 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-amber-300">Left Hand Puppet</span>
+              <span id="leftBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200">Sock Monkey</span>
+            </div>
+            <select id="leftStyleSelect" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white">
+              <option value="sockMonkey" selected>Sock Monkey</option>
+              <option value="crimsonFox">Crimson Fox</option>
+              <option value="oceanFrog">Ocean Frog</option>
+              <option value="royalDino">Royal Dino</option>
+            </select>
+            <select id="leftAccessorySelect" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white">
+              <option value="leafHat" selected>Jungle Leaf</option>
+              <option value="crown">Golden Crown</option>
+              <option value="bowtie">Red Bowtie</option>
+              <option value="none">No Accessory</option>
+            </select>
+          </div>
+
+          <div class="p-3 rounded-xl bg-zinc-800/70 border border-zinc-700/70 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-emerald-300">Right Hand Puppet</span>
+              <span id="rightBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200">Ocean Frog</span>
+            </div>
+            <select id="rightStyleSelect" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white">
+              <option value="oceanFrog" selected>Ocean Frog</option>
+              <option value="sockMonkey">Sock Monkey</option>
+              <option value="crimsonFox">Crimson Fox</option>
+              <option value="royalDino">Royal Dino</option>
+            </select>
+            <select id="rightAccessorySelect" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white">
+              <option value="crown" selected>Golden Crown</option>
+              <option value="leafHat">Jungle Leaf</option>
+              <option value="bowtie">Red Bowtie</option>
+              <option value="none">No Accessory</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. STATE & PALETTES
+    // =========================================================================
+    const state = {
+      demoMode: true,
+      cameraActive: false,
+      audioEnabled: false,
+      audioVolume: 0.35,
+      backdrop: 'jungle',
+      wristRotationEnabled: true,
+      showFingerOverlay: true,
+      mirrorMotion: true, // When facing camera, flips left/right hand motion direction cleanly
+      sensitivity: 1.3,
+      puppets: {
+        Left: { styleId: 'sockMonkey', accessory: 'leafHat' },
+        Right: { styleId: 'oceanFrog', accessory: 'crown' }
+      },
+      hands: {
+        Left: { x: 0.30, y: 0.56, jawOpen: 0.25, roll: 0, yaw: 0.15, pitch: 0.08, scale: 0.88, visible: true, landmarks: null },
+        Right: { x: 0.70, y: 0.54, jawOpen: 0.20, roll: 0, yaw: -0.15, pitch: 0.08, scale: 0.88, visible: true, landmarks: null }
+      }
+    };
+
+    const PUPPET_PALETTES = {
+      sockMonkey: { label: 'Sock Monkey', body: 0x7c4a2d, heel: 0x5c331c, muzzle: 0xf3e5c8, mouth: 0x451218, tongue: 0xf472b6 },
+      crimsonFox: { label: 'Crimson Fox', body: 0xe04f33, heel: 0x992612, muzzle: 0xfff7ed, mouth: 0x4a1016, tongue: 0xfb7185 },
+      oceanFrog: { label: 'Ocean Frog', body: 0x22c55e, heel: 0x86efac, muzzle: 0x4ade80, mouth: 0x3b0d17, tongue: 0xf43f5e },
+      royalDino: { label: 'Royal Dino', body: 0x6366f1, heel: 0xa5b4fc, muzzle: 0x818cf8, mouth: 0x4c1d95, tongue: 0xf472b6 }
+    };
+
+    // =========================================================================
+    // 2. DOM REFERENCES & TOAST HELPER
+    // =========================================================================
+    const stageFrame = document.getElementById('stageFrame');
+    const stageCanvas = document.getElementById('stageCanvas');
+    const stageCtx = stageCanvas.getContext('2d');
+    const videoInput = document.getElementById('videoInput');
+    const statusLabel = document.getElementById('statusLabel');
+    const toastBanner = document.getElementById('toastBanner');
+    const fullscreenBar = document.getElementById('fullscreenBar');
+
+    const recordDialogue = document.getElementById('recordDialogue');
+    const recordDialogueMessage = document.getElementById('recordDialogueMessage');
+    const recordCountdownBadge = document.getElementById('recordCountdownBadge');
+    const recordProgressBar = document.getElementById('recordProgressBar');
+    const recordReviewArea = document.getElementById('recordReviewArea');
+    const recordActiveActions = document.getElementById('recordActiveActions');
+    const recordedClipPreview = document.getElementById('recordedClipPreview');
+    const downloadClipLink = document.getElementById('downloadClipLink');
+    const motionLogOutput = document.getElementById('motionLogOutput');
+
+    let toastTimer = null;
+    function showToast(message) {
+      toastBanner.textContent = message;
+      toastBanner.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastBanner.classList.add('hidden'), 3200);
+    }
+
+    // =========================================================================
+    // 3. PROCEDURAL JUNGLE AUDIO (WEB AUDIO API)
+    // =========================================================================
+    const jungleAudio = {
+      ctx: null,
+      masterGain: null,
+      chirpTimer: null,
+
+      enable() {
+        try {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.gain.value = state.audioVolume;
+            this.masterGain.connect(this.ctx.destination);
+
+            const bufferSize = this.ctx.sampleRate * 2;
+            const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = noiseBuffer;
+            noise.loop = true;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 420;
+            filter.Q.value = 0.8;
+
+            const breezeGain = this.ctx.createGain();
+            breezeGain.gain.value = 0.14;
+
+            noise.connect(filter);
+            filter.connect(breezeGain);
+            breezeGain.connect(this.masterGain);
+            noise.start();
+          }
+
+          if (this.ctx.state === 'suspended') this.ctx.resume();
+          this.masterGain.gain.setTargetAtTime(state.audioVolume, this.ctx.currentTime, 0.08);
+          state.audioEnabled = true;
+          this.startBirdCalls();
+          this.updateButtons();
+        } catch (_) {
+          showToast('Audio could not be started in this browser context.');
+        }
+      },
+
+      disable() {
+        state.audioEnabled = false;
+        if (this.chirpTimer) {
+          clearInterval(this.chirpTimer);
+          this.chirpTimer = null;
+        }
+        if (this.masterGain && this.ctx) {
+          this.masterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+        }
+        this.updateButtons();
+      },
+
+      setVolume(vol) {
+        state.audioVolume = vol;
+        if (this.masterGain && this.ctx && state.audioEnabled) {
+          this.masterGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+        }
+      },
+
+      triggerChirp() {
+        if (!state.audioEnabled || !this.ctx || !this.masterGain) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const baseFreq = 1850 + Math.random() * 1350;
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * (1.2 + Math.random() * 0.3), now + 0.09);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.85, now + 0.19);
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.21);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      },
+
+      startBirdCalls() {
+        if (this.chirpTimer) clearInterval(this.chirpTimer);
+        this.chirpTimer = setInterval(() => {
+          if (Math.random() > 0.35) this.triggerChirp();
+        }, 1400);
+      },
+
+      updateButtons() {
+        document.getElementById('soundBtn').textContent = state.audioEnabled ? 'Jungle Audio: On' : 'Jungle Audio: Off';
+        document.getElementById('fsToggleSound').textContent = state.audioEnabled ? 'Audio On' : 'Audio Off';
+      }
+    };
+
+    // =========================================================================
+    // 4. THREE.JS 3D PUPPET ENGINE
+    // =========================================================================
+    const puppet3DEngine = {
+      scene: null,
+      camera: null,
+      renderer: null,
+      offscreenCanvas: null,
+      puppetGroups: {},
+      orbit: { dragging: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0.08, distance: 6.2 },
+
+      init() {
+        if (this.renderer) return true;
+        if (typeof THREE === 'undefined') return false;
+
+        try {
+          this.offscreenCanvas = document.createElement('canvas');
+          this.renderer = new THREE.WebGLRenderer({
+            canvas: this.offscreenCanvas,
+            alpha: true,
+            antialias: true,
+            preserveDrawingBuffer: true
+          });
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+          this.scene = new THREE.Scene();
+          this.camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 100);
+          this.updateCameraPosition();
+
+          this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+
+          const keyLight = new THREE.DirectionalLight(0xfffbeb, 1.1);
+          keyLight.position.set(4, 6, 7);
+          this.scene.add(keyLight);
+
+          const rimLight = new THREE.DirectionalLight(0x6ee7b7, 0.55);
+          rimLight.position.set(-5, 2, -4);
+          this.scene.add(rimLight);
+
+          this.puppetGroups.Left = this.buildPuppetMesh();
+          this.puppetGroups.Right = this.buildPuppetMesh();
+          this.scene.add(this.puppetGroups.Left.root);
+          this.scene.add(this.puppetGroups.Right.root);
+          return true;
+        } catch (_) {
+          this.renderer = null;
+          return false;
+        }
+      },
+
+      buildPuppetMesh() {
+        const root = new THREE.Group();
+        const pivot = new THREE.Group();
+        root.add(pivot);
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x7c4a2d, roughness: 0.72 });
+        const heelMat = new THREE.MeshStandardMaterial({ color: 0x5c331c, roughness: 0.78 });
+        const muzzleMat = new THREE.MeshStandardMaterial({ color: 0xf3e5c8, roughness: 0.65 });
+        const mouthMat = new THREE.MeshStandardMaterial({ color: 0x451218, roughness: 0.9 });
+        const tongueMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.5 });
+        const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.2 });
+
+        const headGroup = new THREE.Group();
+        const headGeo = new THREE.SphereGeometry(0.68, 28, 24);
+        headGeo.scale(1.05, 1.12, 0.95);
+        const headMesh = new THREE.Mesh(headGeo, bodyMat);
+        headMesh.position.set(0, 0.28, 0);
+        headGroup.add(headMesh);
+
+        // Compact snout/muzzle centered along the face
+        const muzzleGeo = new THREE.SphereGeometry(0.24, 20, 18);
+        muzzleGeo.scale(1.05, 0.72, 0.78);
+        const muzzleMesh = new THREE.Mesh(muzzleGeo, muzzleMat);
+        muzzleMesh.position.set(0, 0.12, 0.52);
+        headGroup.add(muzzleMesh);
+
+        // Ears
+        const earGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 18);
+        earGeo.rotateX(Math.PI / 2);
+        const leftEar = new THREE.Mesh(earGeo, bodyMat);
+        leftEar.position.set(-0.56, 0.78, 0.05);
+        const rightEar = new THREE.Mesh(earGeo, bodyMat);
+        rightEar.position.set(0.56, 0.78, 0.05);
+        headGroup.add(leftEar, rightEar);
+
+        // Eyes & Pupils
+        const eyeGeo = new THREE.SphereGeometry(0.14, 16, 16);
+        const pupilGeo = new THREE.SphereGeometry(0.065, 12, 12);
+
+        const leftEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+        leftEye.position.set(-0.22, 0.52, 0.58);
+        const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        leftPupil.position.set(-0.22, 0.52, 0.71);
+
+        const rightEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+        rightEye.position.set(0.22, 0.52, 0.58);
+        const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        rightPupil.position.set(0.22, 0.52, 0.71);
+
+        headGroup.add(leftEye, leftPupil, rightEye, rightPupil);
+
+        // Accessories
+        const crownGroup = new THREE.Group();
+        const crownMesh = new THREE.Mesh(
+          new THREE.ConeGeometry(0.26, 0.34, 6),
+          new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.4, roughness: 0.3 })
+        );
+        crownMesh.position.set(0, 1.15, 0.05);
+        crownGroup.add(crownMesh);
+        crownGroup.visible = false;
+
+        const leafGroup = new THREE.Group();
+        const leafMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(0.24, 14, 12),
+          new THREE.MeshStandardMaterial({ color: 0x4ade80, roughness: 0.5 })
+        );
+        leafMesh.scale.set(1.4, 0.35, 0.8);
+        leafMesh.position.set(0.05, 1.08, 0.12);
+        leafMesh.rotation.z = -0.35;
+        leafGroup.add(leafMesh);
+        leafGroup.visible = false;
+
+        const bowtieGroup = new THREE.Group();
+        const bowtieMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.36, 0.16, 0.12),
+          new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.5 })
+        );
+        bowtieMesh.position.set(0, -0.35, 0.52);
+        bowtieGroup.add(bowtieMesh);
+        bowtieGroup.visible = false;
+
+        headGroup.add(crownGroup, leafGroup, bowtieGroup);
+        pivot.add(headGroup);
+
+        // Mouth cavity & tongue centered with the lower jaw
+        const mouthMesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), mouthMat);
+        mouthMesh.scale.set(1.05, 0.55, 0.75);
+        mouthMesh.position.set(0, -0.06, 0.42);
+        pivot.add(mouthMesh);
+
+        const tongueMesh = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), tongueMat);
+        tongueMesh.scale.set(1.0, 0.32, 0.95);
+        tongueMesh.position.set(0, -0.14, 0.46);
+        pivot.add(tongueMesh);
+
+        // Hinged lower jaw centered on X
+        const jawPivot = new THREE.Group();
+        jawPivot.position.set(0, -0.14, 0.12);
+        const jawGeo = new THREE.SphereGeometry(0.52, 22, 18);
+        jawGeo.scale(0.96, 0.46, 0.92);
+        const jawMesh = new THREE.Mesh(jawGeo, heelMat);
+        jawMesh.position.set(0, -0.14, 0.16);
+        jawPivot.add(jawMesh);
+        pivot.add(jawPivot);
+
+        return {
+          root,
+          pivot,
+          headGroup,
+          jawPivot,
+          mouthMesh,
+          tongueMesh,
+          leftPupil,
+          rightPupil,
+          crownGroup,
+          leafGroup,
+          bowtieGroup,
+          materials: { bodyMat, heelMat, muzzleMat, mouthMat, tongueMat }
+        };
+      },
+
+      syncAppearance(side) {
+        const group = this.puppetGroups[side];
+        if (!group) return;
+        const cfg = state.puppets[side];
+        const pal = PUPPET_PALETTES[cfg.styleId] || PUPPET_PALETTES.sockMonkey;
+
+        group.materials.bodyMat.color.setHex(pal.body);
+        group.materials.heelMat.color.setHex(pal.heel);
+        group.materials.muzzleMat.color.setHex(pal.muzzle);
+        group.materials.mouthMat.color.setHex(pal.mouth);
+        group.materials.tongueMat.color.setHex(pal.tongue);
+
+        group.crownGroup.visible = cfg.accessory === 'crown';
+        group.leafGroup.visible = cfg.accessory === 'leafHat';
+        group.bowtieGroup.visible = cfg.accessory === 'bowtie';
+      },
+
+      updateCameraPosition() {
+        if (!this.camera) return;
+        const cx = Math.sin(this.orbit.yaw) * Math.cos(this.orbit.pitch) * this.orbit.distance;
+        const cy = Math.sin(this.orbit.pitch) * this.orbit.distance;
+        const cz = Math.cos(this.orbit.yaw) * Math.cos(this.orbit.pitch) * this.orbit.distance;
+        this.camera.position.set(cx, cy, cz);
+        this.camera.lookAt(0, 0, 0);
+      },
+
+      resetCamera() {
+        this.orbit.yaw = 0;
+        this.orbit.pitch = 0.08;
+        this.orbit.distance = 6.2;
+        this.updateCameraPosition();
+      },
+
+      renderToStage(ctx, w, h, t) {
+        if (!this.init()) return false;
+
+        const targetW = Math.max(1, Math.floor(w));
+        const targetH = Math.max(1, Math.floor(h));
+        if (this.offscreenCanvas.width !== targetW || this.offscreenCanvas.height !== targetH) {
+          this.renderer.setSize(targetW, targetH, false);
+          this.camera.aspect = targetW / targetH;
+          this.camera.updateProjectionMatrix();
+        }
+
+        ['Left', 'Right'].forEach((side) => {
+          this.syncAppearance(side);
+          const hand = state.hands[side];
+          const group = this.puppetGroups[side];
+          if (!hand || !group) return;
+
+          group.root.visible = Boolean(hand.visible);
+          const clampedX = Math.max(0.08, Math.min(0.92, hand.x));
+          const clampedY = Math.max(0.12, Math.min(0.88, hand.y));
+          const worldX = (clampedX - 0.5) * 3.8;
+          const worldY = (0.5 - clampedY) * 2.2;
+          const worldZ = side === 'Left' ? 0.15 : -0.1;
+
+          group.root.position.set(worldX, worldY, worldZ);
+          const s = hand.scale || 0.88;
+          group.root.scale.set(s, s, s);
+
+          if (state.wristRotationEnabled) {
+            const mult = state.sensitivity;
+            // Face forward out of the screen (+Z) toward the viewer when palms face the camera,
+            // with only a subtle slight inward angle so both puppets clearly look back at the user.
+            const baseYaw = side === 'Right' ? -0.06 : 0.06;
+            const clampedRoll = Math.max(-0.65, Math.min(0.65, (hand.roll || 0) * mult * 0.65));
+            group.pivot.rotation.z = clampedRoll;
+            group.pivot.rotation.y = baseYaw + Math.max(-0.8, Math.min(0.8, (hand.yaw || 0) * mult));
+            group.pivot.rotation.x = Math.max(-0.55, Math.min(0.55, (hand.pitch || 0) * mult));
+          } else {
+            group.pivot.rotation.set(0, side === 'Right' ? -0.06 : 0.06, 0);
+          }
+
+          const jawOpen = Math.max(0, Math.min(1, hand.jawOpen || 0));
+          group.jawPivot.rotation.x = jawOpen * 0.55;
+          group.headGroup.rotation.x = -jawOpen * 0.1;
+          group.mouthMesh.scale.set(1.05, 0.25 + jawOpen * 0.75, 0.75 + jawOpen * 0.2);
+          group.mouthMesh.position.y = -0.06 - jawOpen * 0.05;
+          group.tongueMesh.position.set(0, -0.15 - jawOpen * 0.04, 0.44 + jawOpen * 0.06);
+
+          const pupilOffsetX = Math.max(-0.04, Math.min(0.04, (hand.yaw || 0) * 0.04));
+          const pupilOffsetY = Math.max(-0.03, Math.min(0.03, (hand.pitch || 0) * 0.03));
+          group.leftPupil.position.x = -0.22 + pupilOffsetX;
+          group.rightPupil.position.x = 0.22 + pupilOffsetX;
+          group.leftPupil.position.y = 0.52 + pupilOffsetY;
+          group.rightPupil.position.y = 0.52 + pupilOffsetY;
+        });
+
+        this.renderer.render(this.scene, this.camera);
+        ctx.drawImage(this.offscreenCanvas, 0, 0, targetW, targetH);
+        return true;
+      }
+    };
+
+    // =========================================================================
+    // 5. WRIST ANGLE CALCULATION & HAND TRACKING (MEDIAPIPE HANDS)
+    // =========================================================================
+    const FINGER_LANDMARK_LABELS = {
+      0: 'Wrist',
+      4: 'Thumb',
+      8: 'Index',
+      12: 'Middle',
+      16: 'Ring',
+      20: 'Pinky'
+    };
+
+    function computeWristAngles(landmarks, slotLabel) {
+      const wrist = landmarks[0];
+      const indexMcp = landmarks[5];
+      const middleMcp = landmarks[9];
+      const pinkyMcp = landmarks[17];
+
+      // Mirror-aware motion sign so left/right wrist tilt & yaw match front-camera expectations;
+      // flip roll specifically for the 'Left' puppet slot so tilting your hand left leans to your left.
+      const dir = state.mirrorMotion ? -1 : 1;
+      const rollSign = slotLabel === 'Left' ? -dir : dir;
+
+      const wristToMiddleAngle = (Math.atan2(middleMcp.y - wrist.y, middleMcp.x - wrist.x) + Math.PI / 2) * rollSign;
+      const palmAngle = Math.atan2(pinkyMcp.y - indexMcp.y, pinkyMcp.x - indexMcp.x) * rollSign;
+      const rawRoll = wristToMiddleAngle * 0.45 + palmAngle * 0.45;
+      const roll = Math.max(-0.65, Math.min(0.65, rawRoll));
+
+      // When your hand turns inward toward the other hand, its projected width across the camera
+      // narrows while its thumb-to-pinky span angle shifts, so combine span foreshortening
+      // and depth delta to turn the puppet toward the other hand cleanly.
+      const spanDx = pinkyMcp.x - indexMcp.x;
+      const spanDy = pinkyMcp.y - indexMcp.y;
+      const projectedSpan = Math.hypot(spanDx, spanDy);
+      const palmLength = Math.max(0.05, Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y));
+      const turnFactor = Math.max(0, Math.min(1, 1 - projectedSpan / (palmLength * 0.85)));
+      const inwardSign = slotLabel === 'Left' ? 1 : -1;
+      const depthTurn = ((pinkyMcp.z || 0) - (indexMcp.z || 0)) * 4.5;
+      const yaw = Math.max(-0.95, Math.min(0.95, inwardSign * turnFactor * 0.85 + depthTurn * 0.45));
+      const pitch = Math.max(-0.85, Math.min(0.85, ((middleMcp.z || 0) - (wrist.z || 0)) * 5.0));
+
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      const palmWidth = Math.max(0.04, Math.hypot(pinkyMcp.x - indexMcp.x, pinkyMcp.y - indexMcp.y));
+      const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+      const jawOpen = Math.max(0, Math.min(1, ((pinchDist / palmWidth) - 0.35) * 1.15));
+
+      return { roll, yaw, pitch, jawOpen };
+    }
+
+    function mapScreenX(rawX) {
+      return 1 - rawX;
+    }
+
+    let mpHands = null;
+    let mpCamera = null;
+    let mpProcessing = false;
+
+    function applyDetectedHands(multiLandmarks, multiHandedness) {
+      const seenSlots = new Set();
+
+      (multiLandmarks || []).forEach((landmarks, idx) => {
+        if (!landmarks || landmarks.length < 21) return;
+        const wrist = landmarks[0];
+        const middleMcp = landmarks[9];
+        const screenX = mapScreenX(wrist.x);
+        const handedLabel = multiHandedness && multiHandedness[idx] && multiHandedness[idx].label;
+
+        // Front-facing camera appears mirrored to the user: MediaPipe 'Left' is user's physical right hand.
+        // If two hands are present and handedness labels collide or are missing, fall back to screen X position.
+        let slotLabel = handedLabel === 'Left' ? 'Right' : handedLabel === 'Right' ? 'Left' : (screenX >= 0.5 ? 'Right' : 'Left');
+        if (seenSlots.has(slotLabel)) {
+          slotLabel = slotLabel === 'Right' ? 'Left' : 'Right';
+        }
+        seenSlots.add(slotLabel);
+
+        const targetX = screenX;
+        const targetY = wrist.y;
+        const palmSpan = Math.hypot(landmarks[5].x - landmarks[17].x, landmarks[5].y - landmarks[17].y);
+        const targetScale = Math.max(0.65, Math.min(1.25, 0.55 + palmSpan * 2.4));
+        const angles = computeWristAngles(landmarks, slotLabel);
+
+        const current = state.hands[slotLabel];
+        const smooth = 0.42;
+        current.x += (targetX - current.x) * smooth;
+        current.y += (targetY - current.y) * smooth;
+        current.scale += (targetScale - current.scale) * smooth;
+        current.roll += (angles.roll - current.roll) * smooth;
+        current.yaw += (angles.yaw - current.yaw) * smooth;
+        current.pitch += (angles.pitch - current.pitch) * smooth;
+        current.jawOpen += (angles.jawOpen - current.jawOpen) * smooth;
+        current.visible = true;
+        current.landmarks = landmarks.map((pt) => ({
+          x: mapScreenX(pt.x),
+          y: pt.y,
+          z: pt.z || 0,
+          midX: mapScreenX(middleMcp.x)
+        }));
+      });
+
+      ['Left', 'Right'].forEach((slot) => {
+        if (!seenSlots.has(slot)) {
+          state.hands[slot].visible = false;
+          state.hands[slot].landmarks = null;
+        }
+      });
+    }
+
+    async function startCamera() {
+      if (state.cameraActive) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('Camera API is unavailable in this browser. Staying in Demo Mode.');
+        return;
+      }
+
+      try {
+        statusLabel.textContent = 'Starting front camera & hand tracker...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        videoInput.srcObject = stream;
+        await videoInput.play();
+
+        if (typeof window.Hands === 'function') {
+          if (!mpHands) {
+            mpHands = new window.Hands({
+              locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            mpHands.setOptions({
+              maxNumHands: 2,
+              modelComplexity: 1,
+              minDetectionConfidence: 0.6,
+              minTrackingConfidence: 0.55
+            });
+            mpHands.onResults((results) => {
+              mpProcessing = false;
+              applyDetectedHands(results.multiHandLandmarks, results.multiHandedness);
+            });
+          }
+
+          if (typeof window.Camera === 'function') {
+            mpCamera = new window.Camera(videoInput, {
+              onFrame: async () => {
+                if (mpProcessing || !state.cameraActive || !mpHands) return;
+                mpProcessing = true;
+                try {
+                  await mpHands.send({ image: videoInput });
+                } catch (_) {
+                  mpProcessing = false;
+                }
+              },
+              width: 1280,
+              height: 720
+            });
+            await mpCamera.start();
+          }
+        }
+
+        state.cameraActive = true;
+        state.demoMode = false;
+        document.getElementById('demoBtn').textContent = 'Demo Mode: Off';
+        document.getElementById('cameraBtn').textContent = 'Camera Active';
+        statusLabel.textContent = 'Live Camera Active — Show Both Hands & Rotate Wrists';
+        showToast('Camera started! Move hands and rotate wrists to turn puppets.');
+      } catch (_) {
+        state.cameraActive = false;
+        state.demoMode = true;
+        document.getElementById('demoBtn').textContent = 'Demo Mode: On';
+        statusLabel.textContent = 'Camera Unavailable — Demo Mode Active';
+        showToast('Could not access camera; keeping Demo Mode active.');
+      }
+    }
+
+    function stopCamera() {
+      state.cameraActive = false;
+      mpProcessing = false;
+      try {
+        if (mpCamera && typeof mpCamera.stop === 'function') mpCamera.stop();
+      } catch (_) {}
+      if (videoInput.srcObject) {
+        videoInput.srcObject.getTracks().forEach((track) => track.stop());
+        videoInput.srcObject = null;
+      }
+      document.getElementById('cameraBtn').textContent = 'Start Camera';
+    }
+
+    // =========================================================================
+    // 6. BACKDROP, DEMO MOTION & FINGER OVERLAY DRAWING
+    // =========================================================================
+    function drawBackdrop(ctx, w, h, t) {
+      if (state.backdrop === 'sunset') {
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#311042');
+        grad.addColorStop(0.55, '#c2410c');
+        grad.addColorStop(1, '#fbbf24');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else if (state.backdrop === 'spotlight') {
+        const grad = ctx.createRadialGradient(w * 0.5, h * 0.35, 30, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
+        grad.addColorStop(0, '#3f3f46');
+        grad.addColorStop(1, '#09090b');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#064e3b');
+        grad.addColorStop(0.6, '#047857');
+        grad.addColorStop(1, '#022c22');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Subtle swaying jungle leaves
+        ctx.save();
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+        for (let i = 0; i < 6; i++) {
+          const sway = Math.sin(t * 1.4 + i) * 14;
+          const lx = (w / 5) * i + sway;
+          ctx.beginPath();
+          ctx.ellipse(lx, h * 0.16, 68, 22, -0.35 + i * 0.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // Stage floor rim
+      ctx.fillStyle = 'rgba(9, 9, 11, 0.38)';
+      ctx.fillRect(0, h * 0.84, w, h * 0.16);
+    }
+
+    function updateDemoMotion(t) {
+      const dir = state.mirrorMotion ? -1 : 1;
+      const leftHand = state.hands.Left;
+      const rightHand = state.hands.Right;
+
+      leftHand.visible = true;
+      leftHand.x = 0.28 + Math.sin(t * 1.1) * 0.06 * dir;
+      leftHand.y = 0.54 + Math.cos(t * 1.5) * 0.05;
+      leftHand.jawOpen = 0.3 + (Math.sin(t * 2.4) * 0.5 + 0.5) * 0.65;
+      leftHand.roll = Math.sin(t * 1.3) * 0.45 * dir;
+      leftHand.yaw = Math.cos(t * 1.1) * 0.38 * dir;
+      leftHand.pitch = Math.sin(t * 0.9) * 0.12;
+      leftHand.scale = 0.9;
+
+      rightHand.visible = true;
+      rightHand.x = 0.72 + Math.cos(t * 1.1) * 0.06 * dir;
+      rightHand.y = 0.52 + Math.sin(t * 1.4) * 0.05;
+      rightHand.jawOpen = 0.25 + (Math.cos(t * 2.1) * 0.5 + 0.5) * 0.65;
+      rightHand.roll = -Math.sin(t * 1.3) * 0.45 * dir;
+      rightHand.yaw = -Math.cos(t * 1.1) * 0.38 * dir;
+      rightHand.pitch = Math.cos(t * 0.9) * 0.12;
+      rightHand.scale = 0.9;
+    }
+
+    function drawFingerOverlay(ctx, w, h) {
+      if (!state.showFingerOverlay) return;
+
+      ['Left', 'Right'].forEach((slot) => {
+        const hand = state.hands[slot];
+        if (!hand || !hand.visible) return;
+
+        ctx.save();
+        if (hand.landmarks && hand.landmarks.length >= 21) {
+          const pts = hand.landmarks;
+          const connections = [
+            [0, 1], [1, 2], [2, 3], [3, 4],
+            [0, 5], [5, 6], [6, 7], [7, 8],
+            [5, 9], [9, 10], [10, 11], [11, 12],
+            [9, 13], [13, 14], [14, 15], [15, 16],
+            [13, 17], [17, 18], [18, 19], [19, 20],
+            [0, 17]
+          ];
+
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
+          ctx.lineWidth = 2;
+          connections.forEach(([a, b]) => {
+            ctx.beginPath();
+            ctx.moveTo(pts[a].x * w, pts[a].y * h);
+            ctx.lineTo(pts[b].x * w, pts[b].y * h);
+            ctx.stroke();
+          });
+
+          ctx.font = '600 11px Inter, sans-serif';
+          Object.entries(FINGER_LANDMARK_LABELS).forEach(([idxStr, label]) => {
+            const idx = Number(idxStr);
+            const pt = pts[idx];
+            if (!pt) return;
+            const px = pt.x * w;
+            const py = pt.y * h;
+
+            ctx.fillStyle = idx === 0 ? '#38bdf8' : '#fde047';
+            ctx.beginPath();
+            ctx.arc(px, py, idx === 0 ? 6 : 4.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(9, 9, 11, 0.8)';
+            ctx.fillRect(px + 6, py - 14, label.length * 6.5 + 8, 16);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(label, px + 10, py - 2);
+          });
+        } else {
+          // Demo indicator dot so user sees active hand tracking position even without camera
+          const px = hand.x * w;
+          const py = hand.y * h;
+          ctx.fillStyle = slot === 'Left' ? '#f59e0b' : '#10b981';
+          ctx.beginPath();
+          ctx.arc(px, py, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = '600 11px Inter, sans-serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(`${slot} Hand`, px + 10, py + 4);
+        }
+        ctx.restore();
+      });
+    }
+
+    // =========================================================================
+    // 7. 10-SECOND RECORDING DIALOGUE & MOTION LOG
+    // =========================================================================
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recordTimerInterval = null;
+    let recordStopTimeout = null;
+    let motionSamples = [];
+    let isRecording10s = false;
+
+    function captureMotionSample(elapsedSec) {
+      const l = state.hands.Left;
+      const r = state.hands.Right;
+      motionSamples.push(
+        `t=${elapsedSec.toFixed(1)}s | L:(x=${l.x.toFixed(2)},y=${l.y.toFixed(2)},roll=${l.roll.toFixed(2)},yaw=${l.yaw.toFixed(2)},jaw=${l.jawOpen.toFixed(2)}) | R:(x=${r.x.toFixed(2)},y=${r.y.toFixed(2)},roll=${r.roll.toFixed(2)},yaw=${r.yaw.toFixed(2)},jaw=${r.jawOpen.toFixed(2)})`
+      );
+    }
+
+    function finishTenSecondRecording() {
+      if (!isRecording10s) return;
+      isRecording10s = false;
+      clearInterval(recordTimerInterval);
+      clearTimeout(recordStopTimeout);
+      recordTimerInterval = null;
+      recordStopTimeout = null;
+
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try {
+          mediaRecorder.stop();
+        } catch (_) {}
+      } else {
+        showRecordingReview(null);
+      }
+    }
+
+    function showRecordingReview(videoUrl) {
+      recordCountdownBadge.textContent = 'Done';
+      recordProgressBar.style.width = '0%';
+      recordActiveActions.classList.add('hidden');
+      recordReviewArea.classList.remove('hidden');
+      motionLogOutput.value = motionSamples.join('\n');
+
+      if (videoUrl) {
+        recordedClipPreview.src = videoUrl;
+        recordedClipPreview.classList.remove('hidden');
+        downloadClipLink.href = videoUrl;
+        downloadClipLink.classList.remove('hidden');
+      } else {
+        recordedClipPreview.classList.add('hidden');
+        downloadClipLink.classList.add('hidden');
+      }
+    }
+
+    function startTenSecondRecording() {
+      if (isRecording10s) return;
+      isRecording10s = true;
+      recordedChunks = [];
+      motionSamples = [];
+
+      recordDialogue.classList.remove('hidden');
+      recordReviewArea.classList.add('hidden');
+      recordActiveActions.classList.remove('hidden');
+      recordDialogueMessage.textContent =
+        'I’m gonna record you for the next 10 seconds — I’d like you to look to see what the puppet is doing in relation to my hand movements.';
+      recordCountdownBadge.textContent = '10s';
+      recordProgressBar.style.width = '100%';
+
+      try {
+        if (typeof stageCanvas.captureStream === 'function' && typeof MediaRecorder !== 'undefined') {
+          const stream = stageCanvas.captureStream(30);
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (ev) => {
+            if (ev.data && ev.data.size > 0) recordedChunks.push(ev.data);
+          };
+          mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = recordedChunks.length > 0 ? URL.createObjectURL(blob) : null;
+            showRecordingReview(url);
+          };
+          mediaRecorder.start();
+        }
+      } catch (_) {
+        mediaRecorder = null;
+      }
+
+      const startTime = Date.now();
+      captureMotionSample(0);
+
+      recordTimerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const remaining = Math.max(0, Math.ceil(10 - elapsed));
+        const pct = Math.max(0, Math.min(100, ((10 - elapsed) / 10) * 100));
+        recordCountdownBadge.textContent = `${remaining}s`;
+        recordProgressBar.style.width = `${pct}%`;
+        captureMotionSample(Math.min(10, elapsed));
+      }, 250);
+
+      recordStopTimeout = setTimeout(() => {
+        finishTenSecondRecording();
+      }, 10000);
+    }
+
+    // =========================================================================
+    // 8. UI EVENT LISTENERS & MAIN ANIMATION LOOP
+    // =========================================================================
+    function syncStageCanvasSize() {
+      const rect = stageFrame.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const targetW = Math.max(1, Math.floor(rect.width * dpr));
+      const targetH = Math.max(1, Math.floor(rect.height * dpr));
+      if (stageCanvas.width !== targetW || stageCanvas.height !== targetH) {
+        stageCanvas.width = targetW;
+        stageCanvas.height = targetH;
+      }
+    }
+
+    document.getElementById('cameraBtn').addEventListener('click', () => {
+      if (state.cameraActive) {
+        stopCamera();
+        state.demoMode = true;
+        document.getElementById('demoBtn').textContent = 'Demo Mode: On';
+        statusLabel.textContent = 'Camera Stopped — Demo Mode Active';
+      } else {
+        startCamera();
+      }
+    });
+
+    document.getElementById('demoBtn').addEventListener('click', () => {
+      state.demoMode = !state.demoMode;
+      document.getElementById('demoBtn').textContent = state.demoMode ? 'Demo Mode: On' : 'Demo Mode: Off';
+      statusLabel.textContent = state.demoMode
+        ? 'Demo Mode Active — Both Hands & Wrist Rotation'
+        : state.cameraActive
+          ? 'Live Camera Tracking Active'
+          : 'Demo Mode Paused';
+    });
+
+    document.getElementById('soundBtn').addEventListener('click', () => {
+      if (state.audioEnabled) jungleAudio.disable();
+      else jungleAudio.enable();
+    });
+
+    document.getElementById('fsToggleSound').addEventListener('click', () => {
+      if (state.audioEnabled) jungleAudio.disable();
+      else jungleAudio.enable();
+    });
+
+    document.getElementById('fsToggleDemo').addEventListener('click', () => {
+      state.demoMode = !state.demoMode;
+      document.getElementById('demoBtn').textContent = state.demoMode ? 'Demo Mode: On' : 'Demo Mode: Off';
+    });
+
+    document.getElementById('volumeSlider').addEventListener('input', (e) => {
+      const val = Number(e.target.value) / 100;
+      document.getElementById('volumeValue').textContent = `${e.target.value}%`;
+      jungleAudio.setVolume(val);
+    });
+
+    document.getElementById('backdropSelect').addEventListener('change', (e) => {
+      state.backdrop = e.target.value;
+    });
+
+    document.getElementById('wristToggle').addEventListener('change', (e) => {
+      state.wristRotationEnabled = e.target.checked;
+    });
+
+    document.getElementById('fingerOverlayToggle').addEventListener('change', (e) => {
+      state.showFingerOverlay = e.target.checked;
+    });
+
+    document.getElementById('mirrorMotionToggle').addEventListener('change', (e) => {
+      state.mirrorMotion = e.target.checked;
+      showToast(state.mirrorMotion ? 'Left / Right motion mirrored for front camera.' : 'Left / Right motion unmirrored.');
+    });
+
+    document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
+      state.sensitivity = Number(e.target.value);
+      document.getElementById('sensitivityValue').textContent = `${state.sensitivity.toFixed(1)}x`;
+    });
+
+    document.getElementById('leftStyleSelect').addEventListener('change', (e) => {
+      state.puppets.Left.styleId = e.target.value;
+      document.getElementById('leftBadge').textContent = PUPPET_PALETTES[e.target.value].label;
+    });
+
+    document.getElementById('leftAccessorySelect').addEventListener('change', (e) => {
+      state.puppets.Left.accessory = e.target.value;
+    });
+
+    document.getElementById('rightStyleSelect').addEventListener('change', (e) => {
+      state.puppets.Right.styleId = e.target.value;
+      document.getElementById('rightBadge').textContent = PUPPET_PALETTES[e.target.value].label;
+    });
+
+    document.getElementById('rightAccessorySelect').addEventListener('change', (e) => {
+      state.puppets.Right.accessory = e.target.value;
+    });
+
+    document.getElementById('snapshotBtn').addEventListener('click', () => {
+      try {
+        const dataUrl = stageCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = 'puppet-theater-snapshot.png';
+        link.click();
+        showToast('Snapshot saved!');
+      } catch (_) {
+        showToast('Snapshot could not be exported.');
+      }
+    });
+
+    document.getElementById('record10Btn').addEventListener('click', startTenSecondRecording);
+    document.getElementById('cancelRecordBtn').addEventListener('click', finishTenSecondRecording);
+    document.getElementById('closeRecordDialogueBtn').addEventListener('click', () => {
+      recordDialogue.classList.add('hidden');
+    });
+    document.getElementById('copyMotionLogBtn').addEventListener('click', () => {
+      motionLogOutput.select();
+      document.execCommand('copy');
+      showToast('Motion log copied to clipboard.');
+    });
+
+    document.getElementById('resetCameraBtn').addEventListener('click', () => {
+      puppet3DEngine.resetCamera();
+      showToast('3D camera view reset.');
+    });
+    document.getElementById('fsResetCam').addEventListener('click', () => {
+      puppet3DEngine.resetCamera();
+    });
+
+    document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await stageFrame.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (_) {
+        showToast('Fullscreen is not supported in this frame.');
+      }
+    });
+
+    document.getElementById('fsExitBtn').addEventListener('click', async () => {
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch (_) {}
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      const isFs = Boolean(document.fullscreenElement);
+      fullscreenBar.classList.toggle('hidden', !isFs);
+      setTimeout(syncStageCanvasSize, 80);
+    });
+
+    // Orbit 3D camera via right-click drag or Alt + left-click drag
+    stageCanvas.addEventListener('mousedown', (e) => {
+      if (e.button === 2 || (e.button === 0 && e.altKey)) {
+        puppet3DEngine.orbit.dragging = true;
+        puppet3DEngine.orbit.lastX = e.clientX;
+        puppet3DEngine.orbit.lastY = e.clientY;
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!puppet3DEngine.orbit.dragging) return;
+      const dx = e.clientX - puppet3DEngine.orbit.lastX;
+      const dy = e.clientY - puppet3DEngine.orbit.lastY;
+      puppet3DEngine.orbit.lastX = e.clientX;
+      puppet3DEngine.orbit.lastY = e.clientY;
+      puppet3DEngine.orbit.yaw -= dx * 0.008;
+      puppet3DEngine.orbit.pitch = Math.max(-0.9, Math.min(0.9, puppet3DEngine.orbit.pitch + dy * 0.008));
+      puppet3DEngine.updateCameraPosition();
+    });
+
+    window.addEventListener('mouseup', () => {
+      puppet3DEngine.orbit.dragging = false;
+    });
+
+    stageCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('resize', syncStageCanvasSize);
+
+    function animate(nowMs = 0) {
+      const t = nowMs / 1000;
+      syncStageCanvasSize();
+
+      if (state.demoMode && !state.cameraActive) {
+        updateDemoMotion(t);
+      }
+
+      const w = stageCanvas.width;
+      const h = stageCanvas.height;
+      drawBackdrop(stageCtx, w, h, t);
+      puppet3DEngine.renderToStage(stageCtx, w, h, t);
+      drawFingerOverlay(stageCtx, w, h);
+
+      requestAnimationFrame(animate);
+    }
+
+    window.onload = function () {
+      syncStageCanvasSize();
+      puppet3DEngine.init();
+      requestAnimationFrame(animate);
+    };
+  </script>
+</body>
+</html>
