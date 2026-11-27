@@ -1,0 +1,19 @@
+{
+  "name": "3D Sock Puppet Theater",
+  "short_name": "Sock Puppet Theater",
+  "description": "3D sock puppets perform on a virtual stage, driven by your hand movements.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
