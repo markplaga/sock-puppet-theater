@@ -53,8 +53,39 @@
       overflow: hidden !important;
       overscroll-behavior: none;
     }
-    #stageFrame.pseudo-fullscreen #fullscreenBar,
+    /* Selectors are kept in separate rules: a browser that does not know one
+       (e.g. :fullscreen before Safari 16.4) drops the whole rule it is in. */
+    #stageFrame:fullscreen {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      aspect-ratio: auto !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+    }
+    #stageFrame:-webkit-full-screen {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      aspect-ratio: auto !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+    }
+    #stageFrame.pseudo-fullscreen #fullscreenBar {
+      bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+      width: max-content;
+      max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
+      flex-wrap: wrap;
+      justify-content: center;
+    }
     #stageFrame:fullscreen #fullscreenBar {
+      bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+      width: max-content;
+      max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #stageFrame:-webkit-full-screen #fullscreenBar {
       bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
       width: max-content;
       max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
@@ -1268,6 +1299,12 @@
     }
 
     function handleFullscreenChange() {
+      // If real fullscreen kicked in, the window-filling fallback isn't needed.
+      if (pseudoFullscreen && nativeFullscreenElement()) {
+        pseudoFullscreen = false;
+        stageFrame.classList.remove('pseudo-fullscreen');
+        document.documentElement.classList.remove('pseudo-fs-lock');
+      }
       fullscreenBar.classList.toggle('hidden', !isStageFullscreen());
       setTimeout(syncStageCanvasSize, 80);
     }
@@ -1284,9 +1321,20 @@
       if (el.requestFullscreen) {
         await el.requestFullscreen();
       } else if (el.webkitRequestFullscreen) {
-        // Legacy webkit returns nothing and fails silently; check it took effect.
-        el.webkitRequestFullscreen();
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Legacy webkit (older iPadOS) returns nothing; wait for its change or
+        // error event, with a timeout in case neither arrives.
+        await new Promise((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            document.removeEventListener('webkitfullscreenchange', finish);
+            document.removeEventListener('webkitfullscreenerror', finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, 1500);
+          document.addEventListener('webkitfullscreenchange', finish);
+          document.addEventListener('webkitfullscreenerror', finish);
+          el.webkitRequestFullscreen();
+        });
       } else {
         throw new Error('Fullscreen API unavailable');
       }
@@ -1296,21 +1344,21 @@
     async function enterStageFullscreen() {
       try {
         await requestNativeFullscreen(stageFrame);
+        handleFullscreenChange();
       } catch (_) {
         setPseudoFullscreen(true);
       }
     }
 
     async function exitStageFullscreen() {
-      if (pseudoFullscreen) {
-        setPseudoFullscreen(false);
-        return;
-      }
+      if (pseudoFullscreen) setPseudoFullscreen(false);
       if (!nativeFullscreenElement()) return;
       try {
         if (document.exitFullscreen) await document.exitFullscreen();
         else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
       } catch (_) {}
+      // Don't rely solely on the change event (legacy webkit can be late).
+      setTimeout(handleFullscreenChange, 150);
     }
 
     document.getElementById('fullscreenBtn').addEventListener('click', () => {
