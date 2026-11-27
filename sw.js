@@ -1,6 +1,6 @@
-// Sock Puppet Theater service worker v2 — same-origin app shell only.
+// Sock Puppet Theater service worker v3 — same-origin app shell only.
 // CDN libraries (Tailwind, Three.js, MediaPipe, Google Fonts) are never cached.
-const CACHE_NAME = 'sock-puppet-theater-v2';
+const CACHE_NAME = 'sock-puppet-theater-v3';
 const CORE_FILES = [
   './',
   'index.html',
